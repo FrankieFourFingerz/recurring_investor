@@ -62,6 +62,7 @@ htmlcov/
 *.csv
 *.xlsx
 *.xls
+*.png
 output/
 results/
 
