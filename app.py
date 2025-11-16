@@ -21,31 +21,23 @@ st.set_page_config(
 st.title("📈 Stock Investment Calculator")
 st.markdown("Calculate and visualize your investment growth using different strategies")
 
-# Sidebar
+# Navigation state (Calculator | Help)
+if "nav" not in st.session_state:
+    st.session_state.nav = "Calculator"
+
+# Sidebar with clickable headings
 with st.sidebar:
-    st.header("Calculator")
-    # Navigation: choose main section
-    main_section = st.radio("Sections", ["Calculator", "Help"], index=0)
-    
-    help_topic = None
-    selected_strategy_for_help = None
-    if main_section == "Help":
-        st.header("Help")
-        help_topic = st.radio("Topics", ["How to use this calculator", "Available strategies"], index=0)
-        if help_topic == "Available strategies":
-            # Let user pick a strategy to view details; content renders on main page
-            strategy_name_map = {sid: get_strategy(sid).name for sid in STRATEGIES.keys()}
-            selected_strategy_for_help = st.selectbox(
-                "Strategy",
-                options=list(STRATEGIES.keys()),
-                format_func=lambda x: strategy_name_map[x]
-            )
+    st.markdown("### Navigation")
+    calc_clicked = st.button("Calculator", use_container_width=True)
+    help_clicked = st.button("Help", use_container_width=True)
+    if calc_clicked:
+        st.session_state.nav = "Calculator"
+    if help_clicked:
+        st.session_state.nav = "Help"
 
-# Main content routing
-if 'main_section' not in locals():
-    main_section = "Calculator"
+nav = st.session_state.nav
 
-if main_section == "Calculator":
+if nav == "Calculator":
     # Strategy selection
     strategy_options = {strategy_id: get_strategy(strategy_id).name for strategy_id in STRATEGIES.keys()}
     selected_strategy_id = st.selectbox(
@@ -423,30 +415,10 @@ if main_section == "Calculator":
                     st.exception(e)
 
 else:
-    # Help content on main page
-    if help_topic == "How to use this calculator":
-        st.header("How to use this calculator")
-        st.markdown(
-            "**Steps:**\n"
-            "1. Select an investment strategy from the dropdown.\n"
-            "2. Enter the strategy-specific parameters.\n"
-            "3. Click 'Calculate' to compute results and show the chart & table.\n\n"
-            "**Features:**\n"
-            "- Multiple strategies\n"
-            "- Interactive charts\n"
-            "- Summary metrics\n"
-            "- Detailed table & CSV export\n"
-        )
-    elif help_topic == "Available strategies":
-        st.header("Available Strategies")
-        if selected_strategy_for_help:
-            s = get_strategy(selected_strategy_for_help)
-            st.subheader(s.name)
-            st.markdown(f"**ID**: `{selected_strategy_for_help}`")
-            st.markdown(f"**Description**: {s.description}")
-            st.markdown("**Parameters**:")
-            for param_def in s.input_parameters:
-                required = "Required" if param_def.get('required', True) else "Optional"
-                st.markdown(f"- `{param_def['name']}` ({param_def['type']}, {required}): {param_def.get('help', 'No description')}")
-        else:
-            st.info("Select a strategy from the sidebar to view details.")
+    # Help content on main page from HELP.md file
+    st.header("Help")
+    try:
+        with open("HELP.md", "r", encoding="utf-8") as f:
+            st.markdown(f.read())
+    except Exception:
+        st.info("Help file not found. Please create HELP.md at the project root.")
