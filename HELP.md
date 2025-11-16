@@ -11,10 +11,7 @@
 - For RSI Swing Strategy, provide a comma-separated list of tickers.
 - Fractional shares are supported.
 
-## Available Strategies
-
-- [Simple Recurring Strategy](strategies/simple_recurring.md)
-- [RSI Swing Strategy](strategies/rsi_swing.md)
+<!-- Available Strategies section is rendered by the app with expanders per strategy. -->
 
 ## Outputs
 - Principal Invested

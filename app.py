@@ -24,6 +24,8 @@ st.markdown("Calculate and visualize your investment growth using different stra
 # Navigation state (Calculator | Help)
 if "nav" not in st.session_state:
     st.session_state.nav = "Calculator"
+if "help_strategy_id" not in st.session_state:
+    st.session_state.help_strategy_id = None
 
 # Sidebar with clickable headings
 with st.sidebar:
@@ -415,10 +417,38 @@ if nav == "Calculator":
                     st.exception(e)
 
 else:
-    # Help content on main page from HELP.md file
+    # Help content on main page
     st.header("Help")
+    # Show HELP.md content split so Available Strategies appears before Outputs
+    help_top = ""
+    help_bottom = ""
     try:
         with open("HELP.md", "r", encoding="utf-8") as f:
-            st.markdown(f.read())
+            help_md = f.read()
+        split_token = "\n## Outputs"
+        if split_token in help_md:
+            parts = help_md.split(split_token, 1)
+            help_top = parts[0]
+            help_bottom = "## Outputs" + parts[1]
+        else:
+            help_top = help_md
+            help_bottom = ""
     except Exception:
         st.info("Help file not found. Please create HELP.md at the project root.")
+        help_top = ""
+        help_bottom = ""
+    if help_top:
+        st.markdown(help_top)
+    # Available Strategies section with expanders (placed before Outputs)
+    st.subheader("Available Strategies")
+    for sid in STRATEGIES.keys():
+        s = get_strategy(sid)
+        with st.expander(s.name, expanded=False):
+            readme_path = f"strategies/{sid}.md"
+            try:
+                with open(readme_path, "r", encoding="utf-8") as f:
+                    st.markdown(f.read())
+            except Exception:
+                st.warning(f"README not found at `{readme_path}`.")
+    if help_bottom:
+        st.markdown(help_bottom)
