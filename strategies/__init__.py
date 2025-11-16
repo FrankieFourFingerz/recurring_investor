@@ -8,11 +8,13 @@ from strategies.base import Strategy
 # Import all strategies
 from strategies.simple_recurring import SimpleRecurringStrategy
 from strategies.rsi_swing import RSISwingStrategy
+from strategies.macd_swing import MACDSwingStrategy
 
 # Registry of available strategies
 STRATEGIES = {
     'simple_recurring': SimpleRecurringStrategy,
-    'rsi_swing': RSISwingStrategy
+    'rsi_swing': RSISwingStrategy,
+    'macd_swing': MACDSwingStrategy
 }
 
 

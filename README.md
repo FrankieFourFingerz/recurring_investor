@@ -52,6 +52,23 @@ Or with Streamlit installed directly:
 streamlit run app.py
 ```
 
+**Set Log Level (Optional):**
+
+To enable debug logging for troubleshooting, use the `LOG_LEVEL` environment variable:
+
+```bash
+LOG_LEVEL=DEBUG poetry run streamlit run app.py
+```
+
+Or on Windows:
+```bash
+set LOG_LEVEL=DEBUG && poetry run streamlit run app.py
+```
+
+Available log levels: `DEBUG`, `INFO` (default), `WARNING`, `ERROR`, `CRITICAL`
+
+**Note:** For Streamlit apps, use the environment variable method since Streamlit processes command-line arguments before our code can access them.
+
 The web app provides:
 - **Interactive Input Form**: Easy-to-use sidebar with date pickers and input fields
 - **Interactive Charts**: Hover over any point to see exact values for that date
@@ -70,6 +87,11 @@ poetry run python stock_investment_calculator.py <TICKER> <START_DATE> <DAILY_IN
 **Example:**
 ```bash
 poetry run python stock_investment_calculator.py AAPL 2024-01-01 100
+```
+
+**With Debug Logging:**
+```bash
+poetry run python stock_investment_calculator.py AAPL 2024-01-01 100 --log-level DEBUG
 ```
 
 ### With End Date
@@ -113,6 +135,7 @@ The plot window will pop up at the end of the calculation. Close the window to e
 - `--db` (optional): Database file path (defaults to `stock_prices.db`)
 - `--output` (optional): CSV output file path
 - `--no-plot` (optional): Skip displaying the interactive plot
+- `--log-level` (optional): Set logging level - `DEBUG`, `INFO` (default), `WARNING`, `ERROR`, `CRITICAL`
 
 ## Output
 

@@ -325,3 +325,195 @@ def get_best_rsi_stock(db_path: str, tickers: list, start_date: date, end_date: 
     
     return best_ticker
 
+
+def calculate_macd(prices: pd.Series, fast_period: int = 12, slow_period: int = 26, signal_period: int = 9) -> pd.DataFrame:
+    """
+    Calculate MACD (Moving Average Convergence Divergence) indicator.
+    
+    Args:
+        prices: Series of closing prices
+        fast_period: Fast EMA period (default 12)
+        slow_period: Slow EMA period (default 26)
+        signal_period: Signal line EMA period (default 9)
+        
+    Returns:
+        DataFrame with columns: 'macd', 'signal', 'histogram'
+    """
+    # Calculate EMAs
+    ema_fast = prices.ewm(span=fast_period, adjust=False).mean()
+    ema_slow = prices.ewm(span=slow_period, adjust=False).mean()
+    
+    # MACD line = Fast EMA - Slow EMA
+    macd_line = ema_fast - ema_slow
+    
+    # Signal line = EMA of MACD line
+    signal_line = macd_line.ewm(span=signal_period, adjust=False).mean()
+    
+    # Histogram = MACD - Signal
+    histogram = macd_line - signal_line
+    
+    result = pd.DataFrame({
+        'macd': macd_line,
+        'signal': signal_line,
+        'histogram': histogram
+    })
+    
+    return result
+
+
+def check_macd_crossover(db_path: str, ticker: str, check_date: date, 
+                        fast_period: int = 12, slow_period: int = 26, signal_period: int = 9) -> bool:
+    """
+    Check if MACD crossover (bullish) occurred on or before the given date.
+    MACD crossover happens when MACD line crosses above the signal line.
+    
+    Args:
+        db_path: Path to database
+        ticker: Stock ticker symbol
+        check_date: Date to check for crossover
+        fast_period: Fast EMA period (default 12)
+        slow_period: Slow EMA period (default 26)
+        signal_period: Signal line EMA period (default 9)
+        
+    Returns:
+        True if MACD crossover (bullish) occurred, False otherwise
+    """
+    # Get enough historical data for MACD calculation
+    # Need at least slow_period + signal_period days
+    lookback_days = slow_period + signal_period + 10  # Extra buffer
+    lookback_start = check_date - timedelta(days=lookback_days)
+    
+    prices_df = get_daily_prices(db_path, ticker, lookback_start, check_date)
+    
+    if prices_df.empty or len(prices_df) < (slow_period + signal_period):
+        return False
+    
+    # Calculate MACD
+    macd_df = calculate_macd(prices_df['close'], fast_period, slow_period, signal_period)
+    
+    if macd_df.empty:
+        return False
+    
+    # Filter to dates up to check_date
+    macd_filtered = macd_df[macd_df.index.date <= check_date]
+    
+    if len(macd_filtered) < 2:
+        return False
+    
+    # Check for crossover: MACD crosses above Signal
+    # Crossover happens when:
+    # - Previous: MACD <= Signal
+    # - Current: MACD > Signal
+    prev_row = macd_filtered.iloc[-2]
+    curr_row = macd_filtered.iloc[-1]
+    
+    # Check if crossover happened
+    if pd.notna(prev_row['macd']) and pd.notna(prev_row['signal']) and \
+       pd.notna(curr_row['macd']) and pd.notna(curr_row['signal']):
+        crossover = (prev_row['macd'] <= prev_row['signal']) and (curr_row['macd'] > curr_row['signal'])
+        return crossover
+    
+    return False
+
+
+def is_macd_above_signal(db_path: str, ticker: str, check_date: date,
+                         fast_period: int = 12, slow_period: int = 26, signal_period: int = 9) -> bool:
+    """
+    Check if MACD is currently above Signal line on the given date.
+    This checks the current state, not a crossover event.
+    
+    Args:
+        db_path: Path to database
+        ticker: Stock ticker symbol
+        check_date: Date to check MACD state
+        fast_period: Fast EMA period (default 12)
+        slow_period: Slow EMA period (default 26)
+        signal_period: Signal line EMA period (default 9)
+        
+    Returns:
+        True if MACD > Signal on the given date, False otherwise
+    """
+    # Get enough historical data for MACD calculation
+    lookback_days = slow_period + signal_period + 10  # Extra buffer
+    lookback_start = check_date - timedelta(days=lookback_days)
+    
+    prices_df = get_daily_prices(db_path, ticker, lookback_start, check_date)
+    
+    if prices_df.empty or len(prices_df) < (slow_period + signal_period):
+        return False
+    
+    # Calculate MACD
+    macd_df = calculate_macd(prices_df['close'], fast_period, slow_period, signal_period)
+    
+    if macd_df.empty:
+        return False
+    
+    # Filter to dates up to check_date
+    macd_filtered = macd_df[macd_df.index.date <= check_date]
+    
+    if macd_filtered.empty:
+        return False
+    
+    # Get the most recent MACD and Signal values
+    latest_row = macd_filtered.iloc[-1]
+    
+    # Check if MACD is above Signal
+    if pd.notna(latest_row['macd']) and pd.notna(latest_row['signal']):
+        return latest_row['macd'] > latest_row['signal']
+    
+    return False
+
+
+def check_macd_crossdown(db_path: str, ticker: str, check_date: date,
+                         fast_period: int = 12, slow_period: int = 26, signal_period: int = 9) -> bool:
+    """
+    Check if MACD crossdown (bearish) occurred on or before the given date.
+    MACD crossdown happens when MACD line crosses below the signal line.
+    
+    Args:
+        db_path: Path to database
+        ticker: Stock ticker symbol
+        check_date: Date to check for crossdown
+        fast_period: Fast EMA period (default 12)
+        slow_period: Slow EMA period (default 26)
+        signal_period: Signal line EMA period (default 9)
+        
+    Returns:
+        True if MACD crossdown (bearish) occurred, False otherwise
+    """
+    # Get enough historical data for MACD calculation
+    lookback_days = slow_period + signal_period + 10  # Extra buffer
+    lookback_start = check_date - timedelta(days=lookback_days)
+    
+    prices_df = get_daily_prices(db_path, ticker, lookback_start, check_date)
+    
+    if prices_df.empty or len(prices_df) < (slow_period + signal_period):
+        return False
+    
+    # Calculate MACD
+    macd_df = calculate_macd(prices_df['close'], fast_period, slow_period, signal_period)
+    
+    if macd_df.empty:
+        return False
+    
+    # Filter to dates up to check_date
+    macd_filtered = macd_df[macd_df.index.date <= check_date]
+    
+    if len(macd_filtered) < 2:
+        return False
+    
+    # Check for crossdown: MACD crosses below Signal
+    # Crossdown happens when:
+    # - Previous: MACD >= Signal
+    # - Current: MACD < Signal
+    prev_row = macd_filtered.iloc[-2]
+    curr_row = macd_filtered.iloc[-1]
+    
+    # Check if crossdown happened
+    if pd.notna(prev_row['macd']) and pd.notna(prev_row['signal']) and \
+       pd.notna(curr_row['macd']) and pd.notna(curr_row['signal']):
+        crossdown = (prev_row['macd'] >= prev_row['signal']) and (curr_row['macd'] < curr_row['signal'])
+        return crossdown
+    
+    return False
+

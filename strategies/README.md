@@ -6,6 +6,7 @@ This directory contains different investment strategies that can be used to calc
 
 1. **[Simple Recurring Strategy](./simple_recurring.md)** - Dollar-cost averaging with a single stock
 2. **[RSI Swing Strategy](./rsi_swing.md)** - RSI-based stock selection with automatic switching
+3. **[MACD Swing Strategy](./macd_swing.md)** - MACD crossover-based buying with automatic profit protection
 
 ## How to Use
 

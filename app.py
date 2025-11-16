@@ -3,12 +3,36 @@
 Streamlit Web App for Stock Investment Calculator
 """
 
+import sys
+import os
+import logging
+
+# Configure logging BEFORE importing streamlit
+# For Streamlit, we use environment variable since Streamlit processes CLI args first
+# Check for log level in environment variable (primary method for Streamlit)
+log_level = logging.INFO  # Default to INFO
+if 'LOG_LEVEL' in os.environ:
+    level_str = os.environ['LOG_LEVEL'].upper()
+    try:
+        log_level = getattr(logging, level_str)
+    except AttributeError:
+        print(f"Warning: Invalid log level '{level_str}'. Using INFO.", file=sys.stderr)
+        log_level = logging.INFO
+
+logging.basicConfig(
+    level=log_level,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+# Now import streamlit and other modules
 import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
 from datetime import date, datetime
 from strategies import get_strategy, STRATEGIES
 from stock_investment_calculator import StockInvestmentCalculator
+from investment_lib import get_daily_prices
 
 # Page configuration
 st.set_page_config(
@@ -234,10 +258,53 @@ if nav == "Calculator":
                         # Prepare data for plotting
                         dates = pd.to_datetime(results_df['Date'])
                         
+                        # Determine which ticker to use for candlestick chart
+                        # For single ticker strategies, use the ticker from params
+                        # For multi-ticker strategies (like RSI Swing), use first ticker or current stock
+                        candlestick_ticker = None
+                        if 'ticker' in params:
+                            candlestick_ticker = params['ticker'].strip().upper()
+                        elif 'stock_list' in params:
+                            # For RSI Swing, use first ticker in the list
+                            stock_list_str = params['stock_list'].strip().upper()
+                            tickers = [s.strip() for s in stock_list_str.split(',') if s.strip()]
+                            if tickers:
+                                candlestick_ticker = tickers[0]
+                        
+                        # Get OHLC data for candlestick chart (if we have a single ticker)
+                        ohlc_df = None
+                        if candlestick_ticker:
+                            try:
+                                start_date = params.get('start_date')
+                                end_date = params.get('end_date')
+                                if start_date and end_date:
+                                    ohlc_df = get_daily_prices("stock_prices.db", candlestick_ticker, start_date, end_date)
+                            except Exception as e:
+                                # If we can't get OHLC data, just skip the candlestick
+                                ohlc_df = None
+                        
                         # Create interactive plot with Plotly
                         fig = go.Figure()
                         
-                        # Add Principal Invested line
+                        # Add candlestick chart on left Y-axis (if we have OHLC data)
+                        if ohlc_df is not None and not ohlc_df.empty:
+                            # Align OHLC dates with results dates
+                            ohlc_dates = pd.to_datetime(ohlc_df.index)
+                            fig.add_trace(go.Candlestick(
+                                x=ohlc_dates,
+                                open=ohlc_df['open'],
+                                high=ohlc_df['high'],
+                                low=ohlc_df['low'],
+                                close=ohlc_df['close'],
+                                name='Stock Price',
+                                yaxis='y',  # Left axis
+                                increasing_line_color='#27ae60',
+                                decreasing_line_color='#e74c3c',
+                                increasing_fillcolor='#27ae60',
+                                decreasing_fillcolor='#e74c3c'
+                            ))
+                        
+                        # Add Principal Invested line (right Y-axis)
                         fig.add_trace(go.Scatter(
                             x=dates,
                             y=results_df['Principal Invested'],
@@ -245,13 +312,14 @@ if nav == "Calculator":
                             name='Principal Invested',
                             line=dict(color='#2c3e50', width=2),
                             marker=dict(size=4),
+                            yaxis='y2',  # Right axis
                             hovertemplate='<b>%{fullData.name}</b><br>' +
                                          'Date: %{x|%Y-%m-%d}<br>' +
                                          'Value: $%{y:,.2f}<br>' +
                                          '<extra></extra>'
                         ))
                         
-                        # Add Total Account Value line
+                        # Add Total Account Value line (right Y-axis)
                         fig.add_trace(go.Scatter(
                             x=dates,
                             y=results_df['Total Account'],
@@ -259,6 +327,7 @@ if nav == "Calculator":
                             name='Total Account Value',
                             line=dict(color='#27ae60', width=2),
                             marker=dict(size=4),
+                            yaxis='y2',  # Right axis
                             hovertemplate='<b>%{fullData.name}</b><br>' +
                                          'Date: %{x|%Y-%m-%d}<br>' +
                                          'Value: $%{y:,.2f}<br>' +
@@ -315,7 +384,7 @@ if nav == "Calculator":
                                         font=dict(color="white", size=10)
                                     )
                                 
-                                # Add markers at switch points
+                                # Add markers at switch points (right Y-axis)
                                 fig.add_trace(go.Scatter(
                                     x=switch_dates_list,
                                     y=switch_values,
@@ -327,12 +396,79 @@ if nav == "Calculator":
                                         color='#e74c3c',
                                         line=dict(width=2, color='white')
                                     ),
+                                    yaxis='y2',  # Right axis
                                     hovertemplate='<b>Stock Switch</b><br>' +
                                                  'Date: %{x|%Y-%m-%d}<br>' +
                                                  'New Stock: %{customdata}<br>' +
                                                  'Value: $%{y:,.2f}<br>' +
                                                  '<extra></extra>',
                                     customdata=switch_stocks
+                                ))
+                        
+                        # Add markers for buy/sell points (if Current State column exists)
+                        if 'Current State' in results_df.columns:
+                            # Find state changes
+                            state_changes = results_df['Current State'] != results_df['Current State'].shift()
+                            
+                            # Identify buy points:
+                            # 1. State changes to "Buying" (transition from Waiting to Buying)
+                            # 2. First row is in "Buying" state (starts in buying mode)
+                            buy_mask = (state_changes) & (results_df['Current State'] == 'Buying')
+                            
+                            # Also mark first row if it starts in buying mode
+                            if len(results_df) > 0 and results_df.iloc[0]['Current State'] == 'Buying':
+                                # Create a boolean series with False for all rows, then set first row to True
+                                first_row_mask = pd.Series([False] * len(results_df), index=results_df.index)
+                                first_row_mask.iloc[0] = True
+                                buy_mask = buy_mask | first_row_mask
+                            buy_dates = dates[buy_mask]
+                            buy_values = results_df['Total Account'][buy_mask]
+                            
+                            # Identify sell points (transition from "Buying" to "Waiting")
+                            sell_mask = (state_changes) & (results_df['Current State'].shift() == 'Buying')
+                            sell_dates = dates[sell_mask]
+                            sell_values = results_df['Total Account'][sell_mask]
+                            
+                            # Add buy markers (right Y-axis)
+                            if len(buy_dates) > 0:
+                                buy_dates_list = buy_dates.tolist()
+                                fig.add_trace(go.Scatter(
+                                    x=buy_dates_list,
+                                    y=buy_values,
+                                    mode='markers',
+                                    name='Buy Signal',
+                                    marker=dict(
+                                        symbol='triangle-up',
+                                        size=15,
+                                        color='#27ae60',
+                                        line=dict(width=2, color='white')
+                                    ),
+                                    yaxis='y2',  # Right axis
+                                    hovertemplate='<b>Buy Signal</b><br>' +
+                                                 'Date: %{x|%Y-%m-%d}<br>' +
+                                                 'Value: $%{y:,.2f}<br>' +
+                                                 '<extra></extra>'
+                                ))
+                            
+                            # Add sell markers (right Y-axis)
+                            if len(sell_dates) > 0:
+                                sell_dates_list = sell_dates.tolist()
+                                fig.add_trace(go.Scatter(
+                                    x=sell_dates_list,
+                                    y=sell_values,
+                                    mode='markers',
+                                    name='Sell Signal',
+                                    marker=dict(
+                                        symbol='triangle-down',
+                                        size=15,
+                                        color='#e74c3c',
+                                        line=dict(width=2, color='white')
+                                    ),
+                                    yaxis='y2',  # Right axis
+                                    hovertemplate='<b>Sell Signal</b><br>' +
+                                                 'Date: %{x|%Y-%m-%d}<br>' +
+                                                 'Value: $%{y:,.2f}<br>' +
+                                                 '<extra></extra>'
                                 ))
                         
                         # Update layout
@@ -355,9 +491,17 @@ if nav == "Calculator":
                                 gridcolor='rgba(0,0,0,0.1)'
                             ),
                             yaxis=dict(
-                                title='Value ($)',
+                                title='Stock Price ($)',
+                                side='left',
                                 showgrid=True,
                                 gridcolor='rgba(0,0,0,0.1)',
+                                tickformat='$,.2f'
+                            ),
+                            yaxis2=dict(
+                                title='Account Value ($)',
+                                side='right',
+                                overlaying='y',
+                                showgrid=False,
                                 tickformat='$,.0f'
                             ),
                             hovermode='x unified',

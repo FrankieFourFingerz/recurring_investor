@@ -3,6 +3,7 @@
 RSI Swing Strategy: Invests in stocks with best RSI values and switches when profit drops 10% from peak.
 """
 
+import logging
 from datetime import date
 from typing import Dict, List, Any
 import pandas as pd
@@ -13,6 +14,8 @@ from investment_lib import (
     get_best_rsi_stock,
     calculate_rsi
 )
+
+logger = logging.getLogger(__name__)
 
 
 class RSISwingStrategy(Strategy):
@@ -110,11 +113,14 @@ class RSISwingStrategy(Strategy):
         if not stock_list:
             raise ValueError("Stock list cannot be empty")
         
-        # Log the parsed stock list for debugging (remove spaces, ensure clean)
-        print(f"Using stock list: {stock_list}")
+        logger.debug(f"RSI Swing Strategy: Starting calculation")
+        logger.debug(f"Parameters: start_date={start_date}, end_date={end_date}, daily_investment=${daily_investment}")
+        logger.debug(f"RSI period={rsi_period}, profit_drop_threshold={profit_drop_threshold*100:.1f}%")
+        logger.debug(f"Using stock list: {stock_list}")
         
         # Ensure we have data for all stocks (ONLY from the provided list)
         for stock in stock_list:
+            logger.debug(f"Fetching data for {stock}")
             fetch_and_update_prices(db_path, stock, start_date, end_date)
         
         # Get all trading dates (ONLY from stocks in the provided list)
@@ -132,6 +138,8 @@ class RSISwingStrategy(Strategy):
         
         # Get unique sorted dates
         unique_dates = sorted(set(all_dates))
+        
+        logger.debug(f"Found {len(unique_dates)} unique trading dates")
         
         # Final validation: ensure stock_list hasn't been modified
         if set(stock_list) != set([s.strip().upper() for s in stock_list_str.split(',') if s.strip()]):
@@ -161,6 +169,7 @@ class RSISwingStrategy(Strategy):
                 # Validate one more time
                 if current_stock not in stock_list:
                     raise ValueError(f"Selected stock {current_stock} is not in provided list: {stock_list}")
+                logger.debug(f"Initial stock selection on {trade_date}: {current_stock}")
                 stocks_owned[current_stock] = 0.0
                 total_invested_per_stock[current_stock] = 0.0
                 peak_profit = 0.0
@@ -186,15 +195,25 @@ class RSISwingStrategy(Strategy):
             
             # Update peak profit
             if current_profit > peak_profit:
+                old_peak = peak_profit
                 peak_profit = current_profit
+                logger.debug(f"New peak profit on {trade_date}: ${peak_profit:.2f} (was ${old_peak:.2f})")
             
             # Check if we need to switch stocks (profit dropped 10% from peak)
             should_switch = False
             if peak_profit > 0 and current_profit < peak_profit * (1 - profit_drop_threshold):
                 should_switch = True
+                logger.debug(
+                    f"Switch trigger on {trade_date}: Current profit ${current_profit:.2f} < "
+                    f"${peak_profit * (1 - profit_drop_threshold):.2f} (peak ${peak_profit:.2f} - "
+                    f"{profit_drop_threshold*100:.1f}%)"
+                )
             
             # If switching, "sell" all positions and pick new stock
             if should_switch:
+                old_stock = current_stock
+                logger.debug(f"Switching from {old_stock} on {trade_date}. Portfolio value: ${portfolio_value:.2f}")
+                
                 # Sell all positions - convert to cash
                 cash = portfolio_value  # All portfolio value becomes cash
                 stocks_owned = {}  # Clear all positions
@@ -213,8 +232,12 @@ class RSISwingStrategy(Strategy):
                 if current_stock not in stock_list:
                     raise ValueError(f"Selected stock {current_stock} is not in provided list: {stock_list}")
                 
+                logger.debug(f"Switched to {current_stock} on {trade_date}")
+                
                 # Reset peak profit after switch (use current profit as new baseline)
+                old_peak = peak_profit
                 peak_profit = max(0.0, current_profit)
+                logger.debug(f"Reset peak profit: ${peak_profit:.2f} (was ${old_peak:.2f})")
                 
                 # Initialize new stock
                 stocks_owned[current_stock] = 0.0
@@ -230,6 +253,11 @@ class RSISwingStrategy(Strategy):
                     shares_from_cash = cash / new_stock_price if new_stock_price > 0 else 0
                     shares_from_daily = daily_investment / new_stock_price if new_stock_price > 0 else 0
                     total_shares = shares_from_cash + shares_from_daily
+                    
+                    logger.debug(
+                        f"After switch on {trade_date}: Bought {total_shares:.6f} shares of {current_stock} "
+                        f"at ${new_stock_price:.2f} (cash=${cash:.2f} + daily=${daily_investment:.2f})"
+                    )
                     
                     stocks_owned[current_stock] = total_shares
                     total_invested_per_stock[current_stock] = daily_investment  # Only track new investment
@@ -275,6 +303,13 @@ class RSISwingStrategy(Strategy):
             stocks_owned[current_stock] += shares_bought
             total_invested_per_stock[current_stock] += daily_investment
             total_invested_all += daily_investment
+            
+            logger.debug(
+                f"Date: {trade_date}, Stock: {current_stock}, Price: ${current_price:.2f}, "
+                f"Shares Bought: {shares_bought:.6f}, Total Shares: {stocks_owned[current_stock]:.6f}, "
+                f"Portfolio Value: ${portfolio_value:.2f}, Profit: ${final_profit:.2f}, "
+                f"Peak Profit: ${peak_profit:.2f}"
+            )
             
             # Recalculate portfolio value after purchase (stocks + cash)
             portfolio_value = cash

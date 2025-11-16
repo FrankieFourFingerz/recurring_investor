@@ -3,11 +3,14 @@
 Simple Recurring Strategy: Invest a fixed amount every trading day.
 """
 
+import logging
 from datetime import date
 from typing import Dict, List, Any
 import pandas as pd
 from strategies.base import Strategy
 from investment_lib import fetch_and_update_prices, get_daily_prices
+
+logger = logging.getLogger(__name__)
 
 
 class SimpleRecurringStrategy(Strategy):
@@ -71,6 +74,9 @@ class SimpleRecurringStrategy(Strategy):
         end_date = params['end_date']
         daily_investment = params['daily_investment']
         
+        logger.debug(f"Simple Recurring Strategy: Starting calculation for {ticker}")
+        logger.debug(f"Parameters: start_date={start_date}, end_date={end_date}, daily_investment=${daily_investment}")
+        
         # Ensure we have data in the database
         fetch_and_update_prices(db_path, ticker, start_date, end_date)
         
@@ -79,6 +85,8 @@ class SimpleRecurringStrategy(Strategy):
         
         if prices_df.empty:
             raise ValueError(f"No price data found for {ticker} in the specified date range.")
+        
+        logger.debug(f"Retrieved {len(prices_df)} trading days of data")
         
         # Calculate investment growth
         results = []
@@ -102,6 +110,12 @@ class SimpleRecurringStrategy(Strategy):
             # Calculate profit/loss
             profit_loss = current_account_value - total_invested
             
+            logger.debug(
+                f"Date: {date_idx.date()}, Price: ${close_price:.2f}, "
+                f"Stocks Bought: {stocks_bought:.6f}, Total Stocks: {total_stocks:.6f}, "
+                f"Account Value: ${current_account_value:.2f}, Profit/Loss: ${profit_loss:.2f}"
+            )
+            
             results.append({
                 'Date': date_idx.date(),
                 'Investment $': round(daily_investment, 2),
@@ -111,5 +125,7 @@ class SimpleRecurringStrategy(Strategy):
                 'Profit/Loss': round(profit_loss, 2),
                 'Principal Invested': round(total_invested, 2)
             })
+        
+        logger.debug(f"Calculation complete. Final totals: Stocks={total_stocks:.6f}, Invested=${total_invested:.2f}")
         
         return pd.DataFrame(results)

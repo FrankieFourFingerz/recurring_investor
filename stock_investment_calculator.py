@@ -5,6 +5,7 @@ Stock Investment Calculator - CLI interface using strategy pattern
 
 import argparse
 import sys
+import logging
 from datetime import date, datetime
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -92,8 +93,23 @@ def main():
     parser.add_argument('--db', type=str, default='stock_prices.db', help='Database file path (default: stock_prices.db)')
     parser.add_argument('--output', type=str, default=None, help='Output CSV file path (optional)')
     parser.add_argument('--no-plot', action='store_true', help='Skip displaying the plot')
+    parser.add_argument(
+        '--log-level',
+        type=str,
+        default='INFO',
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+        help='Set the logging level (default: INFO)'
+    )
     
     args = parser.parse_args()
+    
+    # Configure logging
+    log_level = getattr(logging, args.log_level.upper())
+    logging.basicConfig(
+        level=log_level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
     
     # Parse dates
     try:
