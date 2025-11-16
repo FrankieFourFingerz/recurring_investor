@@ -13,11 +13,8 @@
 
 ## Available Strategies
 
-- Simple Recurring Strategy — Dollar-cost averaging with a single stock  
-  [Read the strategy README](strategies/simple_recurring.md)
-
-- RSI Swing Strategy — Selects stock with best RSI and switches on drawdown  
-  [Read the strategy README](strategies/rsi_swing.md)
+- [Simple Recurring Strategy](strategies/simple_recurring.md)
+- [RSI Swing Strategy](strategies/rsi_swing.md)
 
 ## Outputs
 - Principal Invested
