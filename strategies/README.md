@@ -23,11 +23,19 @@ All strategies inherit from the base `Strategy` class and implement:
 
 ## Adding New Strategies
 
-To add a new strategy:
+📖 **See [ADDING_NEW_STRATEGY.md](./ADDING_NEW_STRATEGY.md) for a complete guide on creating new strategies.**
+
+Quick steps:
 1. Create a new file in this directory (e.g., `my_strategy.py`)
 2. Import `Strategy` from `strategies.base`
-3. Implement all required methods
+3. Implement all required methods (`name`, `description`, `input_parameters`, `calculate`)
 4. Register it in `strategies/__init__.py`
 
-See existing strategies for examples.
+The guide includes:
+- Complete interface documentation
+- Parameter type definitions
+- Output format requirements
+- Step-by-step instructions
+- Complete working examples
+- Best practices and troubleshooting
 
