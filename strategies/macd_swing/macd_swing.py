@@ -14,7 +14,8 @@ from investment_lib import (
     check_macd_crossover,
     check_macd_crossdown,
     is_macd_above_signal,
-    calculate_macd
+    calculate_macd,
+    is_price_above_ema
 )
 
 logger = logging.getLogger(__name__)
@@ -122,15 +123,19 @@ class MACDSwingStrategy(Strategy):
         logger.debug(f"Parameters: start_date={start_date}, end_date={end_date}, daily_investment=${daily_investment}")
         logger.debug(f"MACD parameters: fast={macd_fast}, slow={macd_slow}, signal={macd_signal}")
         
-        # Calculate lookback period needed for MACD calculation
-        # We need at least slow_period + signal_period + buffer days before start_date
+        # Calculate lookback period needed for MACD calculation AND 50-day EMA
+        # We need at least slow_period + signal_period + buffer days before start_date for MACD
+        # We also need at least 50 trading days before start_date for EMA calculation
+        # Since 50 trading days ≈ 70-75 calendar days (accounting for weekends/holidays), we use 75
         from datetime import timedelta
-        lookback_days = macd_slow + macd_signal + 60  # Extra buffer for safety (accounting for weekends/holidays)
+        macd_lookback_days = macd_slow + macd_signal + 60  # Extra buffer for safety (accounting for weekends/holidays)
+        ema_lookback_calendar_days = 75  # Need ~50 trading days, which is ~75 calendar days
+        lookback_days = max(macd_lookback_days, ema_lookback_calendar_days)
         fetch_start_date = start_date - timedelta(days=lookback_days)
         
-        logger.debug(f"Fetching data from {fetch_start_date} to {end_date} (lookback: {lookback_days} days for MACD calculation)")
+        logger.debug(f"Fetching data from {fetch_start_date} to {end_date} (lookback: {lookback_days} days for MACD and EMA calculation)")
         
-        # Ensure we have data in the database (with lookback for MACD calculation)
+        # Ensure we have data in the database (with lookback for MACD and EMA calculation)
         fetch_and_update_prices(db_path, ticker, fetch_start_date, end_date)
         
         # Get daily prices for the investment period
@@ -157,6 +162,7 @@ class MACDSwingStrategy(Strategy):
         stocks_owned = 0.0
         total_invested = 0.0
         cash = 0.0
+        has_had_first_sell = False  # Track if we've had at least one sell
         
         # Check initial state: if MACD is above Signal at start date, start buying immediately
         is_buying = is_macd_above_signal(
@@ -221,6 +227,21 @@ class MACDSwingStrategy(Strategy):
             # Get MACD values for current date
             macd_val, signal_val, histogram_val = get_macd_values(current_date)
             
+            # Get 50 EMA value for logging and condition checking
+            # Only calculate if we need it (after first sell) or if we have enough data
+            ema_50_value = None
+            if has_had_first_sell:
+                # After first sell, we need EMA for the buy condition
+                # Pass fetch_start_date for validation - check total fetched data
+                _, ema_50_value = is_price_above_ema(db_path, ticker, current_date, ema_period=50, start_date=start_date, fetch_start_date=fetch_start_date)
+            else:
+                # Before first sell, try to get EMA for logging only if we have enough data
+                # Check if we have at least 50 calendar days from start (which should give us enough trading days)
+                calendar_days_since_start = (current_date - start_date).days
+                if calendar_days_since_start >= 50:
+                    # Pass fetch_start_date for validation (it will check total fetched data)
+                    _, ema_50_value = is_price_above_ema(db_path, ticker, current_date, ema_period=50, start_date=start_date, fetch_start_date=fetch_start_date)
+            
             # Calculate current portfolio value
             portfolio_value = cash + (stocks_owned * current_price)
             
@@ -234,22 +255,59 @@ class MACDSwingStrategy(Strategy):
                 # Also check if MACD is currently above Signal (in case we missed the crossover)
                 macd_above_signal = (macd_val is not None and signal_val is not None and macd_val > signal_val)
                 
-                if crossover_up or macd_above_signal:
+                # After first sell, also require price to be above 50 EMA
+                # Get EMA value (we already calculated it above for logging, reuse it)
+                price_above_ema = True  # Default to True (no restriction before first sell)
+                if has_had_first_sell:
+                    # Use the EMA value we already calculated for logging
+                    price_above_ema = (ema_50_value is not None and current_price > ema_50_value)
+                    ema_value = ema_50_value  # Use the already calculated EMA value
+                else:
+                    ema_value = ema_50_value  # Still use it for logging even if not required
+                
+                # Start buying if MACD condition is met AND (no first sell yet OR price above 50 EMA)
+                if (crossover_up or macd_above_signal) and price_above_ema:
                     # Start buying
                     is_buying = True
                     if macd_val is not None:
                         if crossover_up:
-                            logger.debug(
-                                f"MACD crossover detected on {current_date}: Entering buying mode. "
-                                f"MACD Line={macd_val:.4f}, Signal Line={signal_val:.4f}, Histogram={histogram_val:.4f}"
-                            )
+                            if has_had_first_sell and ema_value is not None:
+                                logger.debug(
+                                    f"MACD crossover detected on {current_date}: Entering buying mode (price above 50 EMA confirmed). "
+                                    f"MACD Line={macd_val:.4f}, Signal Line={signal_val:.4f}, Histogram={histogram_val:.4f}, "
+                                    f"Price=${current_price:.2f} > 50 EMA=${ema_value:.2f}"
+                                )
+                            else:
+                                logger.debug(
+                                    f"MACD crossover detected on {current_date}: Entering buying mode. "
+                                    f"MACD Line={macd_val:.4f}, Signal Line={signal_val:.4f}, Histogram={histogram_val:.4f}"
+                                )
                         else:
-                            logger.debug(
-                                f"MACD above Signal on {current_date}: Entering buying mode (no crossover, but MACD > Signal). "
-                                f"MACD Line={macd_val:.4f}, Signal Line={signal_val:.4f}, Histogram={histogram_val:.4f}"
-                            )
+                            if has_had_first_sell and ema_value is not None:
+                                logger.debug(
+                                    f"MACD above Signal on {current_date}: Entering buying mode (no crossover, but MACD > Signal, price above 50 EMA confirmed). "
+                                    f"MACD Line={macd_val:.4f}, Signal Line={signal_val:.4f}, Histogram={histogram_val:.4f}, "
+                                    f"Price=${current_price:.2f} > 50 EMA=${ema_value:.2f}"
+                                )
+                            else:
+                                logger.debug(
+                                    f"MACD above Signal on {current_date}: Entering buying mode (no crossover, but MACD > Signal). "
+                                    f"MACD Line={macd_val:.4f}, Signal Line={signal_val:.4f}, Histogram={histogram_val:.4f}"
+                                )
                     else:
                         logger.debug(f"MACD crossover/above Signal detected on {current_date}: Entering buying mode. MACD values unavailable")
+                elif (crossover_up or macd_above_signal) and not price_above_ema:
+                    # MACD condition met but price not above 50 EMA (after first sell)
+                    if ema_value is not None:
+                        logger.debug(
+                            f"MACD condition met on {current_date} but price ${current_price:.2f} is NOT above 50 EMA=${ema_value:.2f}. "
+                            f"Waiting for price to cross above 50 EMA. MACD Line={macd_val:.4f}, Signal Line={signal_val:.4f}"
+                        )
+                    else:
+                        logger.debug(
+                            f"MACD condition met on {current_date} but price ${current_price:.2f} is NOT above 50 EMA (EMA value unavailable). "
+                            f"Waiting for price to cross above 50 EMA. MACD Line={macd_val:.4f}, Signal Line={signal_val:.4f}"
+                        )
             
             # Check for MACD crossdown (bearish - stop buying and sell)
             if is_buying:
@@ -266,6 +324,9 @@ class MACDSwingStrategy(Strategy):
                     portfolio_value_before_sell = cash + (stocks_owned * current_price)
                     cash = portfolio_value_before_sell  # Convert all shares to cash
                     stocks_owned = 0.0  # Sell all shares
+                    
+                    # Mark that we've had our first sell
+                    has_had_first_sell = True
                     
                     # Stop buying
                     is_buying = False
@@ -299,29 +360,33 @@ class MACDSwingStrategy(Strategy):
                     cash = 0.0  # All cash used for buying
                     investment_amount = total_available
                     if macd_val is not None:
+                        ema_str = f", 50 EMA=${ema_50_value:.2f}" if ema_50_value is not None else ""
                         logger.debug(
                             f"Date: {current_date}, Buying: {shares_bought:.6f} shares at ${current_price:.2f}, "
                             f"Investment: ${investment_amount:.2f} (cash=${cash:.2f} + daily=${daily_investment:.2f}). "
-                            f"MACD Line={macd_val:.4f}, Signal Line={signal_val:.4f}, Histogram={histogram_val:.4f}"
+                            f"MACD Line={macd_val:.4f}, Signal Line={signal_val:.4f}, Histogram={histogram_val:.4f}{ema_str}"
                         )
                     else:
+                        ema_str = f", 50 EMA=${ema_50_value:.2f}" if ema_50_value is not None else ""
                         logger.debug(
                             f"Date: {current_date}, Buying: {shares_bought:.6f} shares at ${current_price:.2f}, "
                             f"Investment: ${investment_amount:.2f} (cash=${cash:.2f} + daily=${daily_investment:.2f}). "
-                            f"MACD values unavailable"
+                            f"MACD values unavailable{ema_str}"
                         )
             else:
                 if macd_val is not None:
+                    ema_str = f", 50 EMA=${ema_50_value:.2f}" if ema_50_value is not None else ""
                     logger.debug(
                         f"Date: {current_date}, Waiting mode: No investment. "
                         f"Cash: ${cash:.2f}, Shares: {stocks_owned:.6f}, Portfolio Value: ${portfolio_value:.2f}. "
-                        f"MACD Line={macd_val:.4f}, Signal Line={signal_val:.4f}, Histogram={histogram_val:.4f}"
+                        f"MACD Line={macd_val:.4f}, Signal Line={signal_val:.4f}, Histogram={histogram_val:.4f}{ema_str}"
                     )
                 else:
+                    ema_str = f", 50 EMA=${ema_50_value:.2f}" if ema_50_value is not None else ""
                     logger.debug(
                         f"Date: {current_date}, Waiting mode: No investment. "
                         f"Cash: ${cash:.2f}, Shares: {stocks_owned:.6f}, Portfolio Value: ${portfolio_value:.2f}. "
-                        f"MACD values unavailable"
+                        f"MACD values unavailable{ema_str}"
                     )
             
             # Recalculate portfolio value after all transactions

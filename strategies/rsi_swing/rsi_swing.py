@@ -304,13 +304,6 @@ class RSISwingStrategy(Strategy):
             total_invested_per_stock[current_stock] += daily_investment
             total_invested_all += daily_investment
             
-            logger.debug(
-                f"Date: {trade_date}, Stock: {current_stock}, Price: ${current_price:.2f}, "
-                f"Shares Bought: {shares_bought:.6f}, Total Shares: {stocks_owned[current_stock]:.6f}, "
-                f"Portfolio Value: ${portfolio_value:.2f}, Profit: ${final_profit:.2f}, "
-                f"Peak Profit: ${peak_profit:.2f}"
-            )
-            
             # Recalculate portfolio value after purchase (stocks + cash)
             portfolio_value = cash
             for stock, shares in stocks_owned.items():
@@ -322,6 +315,13 @@ class RSISwingStrategy(Strategy):
             
             # Calculate final profit
             final_profit = portfolio_value - total_invested_all
+            
+            logger.debug(
+                f"Date: {trade_date}, Stock: {current_stock}, Price: ${current_price:.2f}, "
+                f"Shares Bought: {shares_bought:.6f}, Total Shares: {stocks_owned[current_stock]:.6f}, "
+                f"Portfolio Value: ${portfolio_value:.2f}, Profit: ${final_profit:.2f}, "
+                f"Peak Profit: ${peak_profit:.2f}"
+            )
             
             # Validate that current_stock is in the provided stock_list (safety check)
             if current_stock not in stock_list:

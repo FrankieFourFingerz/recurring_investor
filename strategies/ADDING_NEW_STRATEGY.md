@@ -39,12 +39,12 @@ All strategies must inherit from `Strategy` and implement the following:
 
 ## Step-by-Step Guide
 
-### Step 1: Create Strategy File
+### Step 1: Create Strategy Folder and Files
 
-Create a new Python file in the `strategies/` directory:
+Create a new folder in the `strategies/` directory with the strategy name, and create the strategy Python file inside it:
 
 ```python
-# strategies/my_custom_strategy.py
+# strategies/my_custom_strategy/my_custom_strategy.py
 #!/usr/bin/env python3
 """
 My Custom Strategy: Description of what it does.
@@ -243,7 +243,23 @@ def calculate(self, db_path: str, ticker: str, params: Dict[str, Any]) -> pd.Dat
     return results_df
 ```
 
-### Step 4: Register the Strategy
+### Step 3: Create `__init__.py` in Strategy Folder
+
+Create an `__init__.py` file in your strategy folder to export the strategy class:
+
+```python
+# strategies/my_custom_strategy/__init__.py
+#!/usr/bin/env python3
+"""
+My Custom Strategy - Exports
+"""
+
+from strategies.my_custom_strategy.my_custom_strategy import MyCustomStrategy
+
+__all__ = ['MyCustomStrategy']
+```
+
+### Step 4: Register Strategy in `strategies/__init__.py`
 
 Add your strategy to `strategies/__init__.py`:
 
@@ -477,6 +493,7 @@ After creating your strategy:
 4. Commit your changes to version control
 
 For more examples, see:
-- `strategies/simple_recurring.py` - Simple single-stock strategy
-- `strategies/rsi_swing.py` - Complex multi-stock strategy with switching logic
+- `strategies/simple_recurring/` - Simple single-stock strategy
+- `strategies/rsi_swing/` - Complex multi-stock strategy with switching logic
+- `strategies/macd_swing/` - MACD-based swing trading strategy
 

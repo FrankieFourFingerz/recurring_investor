@@ -361,6 +361,104 @@ def calculate_macd(prices: pd.Series, fast_period: int = 12, slow_period: int = 
     return result
 
 
+def is_price_above_ema(db_path: str, ticker: str, check_date: date, ema_period: int = 50, 
+                       start_date: Optional[date] = None, fetch_start_date: Optional[date] = None) -> tuple:
+    """
+    Check if the current price is above the EMA (Exponential Moving Average) on the given date.
+    
+    Args:
+        db_path: Path to database
+        ticker: Stock ticker symbol
+        check_date: Date to check price vs EMA
+        ema_period: EMA period (default 50)
+        start_date: Optional start date (kept for backward compatibility)
+        fetch_start_date: Optional fetch start date - if provided, we check total fetched data
+        
+    Returns:
+        Tuple of (is_above: bool, ema_value: float | None)
+        is_above: True if price > EMA on the given date, False otherwise
+        ema_value: The EMA value on the given date, or None if unavailable
+        
+    Raises:
+        ValueError: If we have 51+ trading days of fetched data but cannot calculate EMA
+    """
+    from datetime import timedelta
+    # Get enough historical data for EMA calculation
+    # 50 trading days ≈ 70-75 calendar days (accounting for weekends/holidays)
+    # Use 100 calendar days to ensure we have enough trading days
+    lookback_days = max(ema_period + 25, 100)  # Ensure we get enough trading days
+    lookback_start = check_date - timedelta(days=lookback_days)
+    
+    prices_df = get_daily_prices(db_path, ticker, lookback_start, check_date)
+    
+    # Count actual trading days in the lookback period
+    actual_trading_days = len(prices_df) if not prices_df.empty else 0
+    
+    # Check total fetched data if fetch_start_date is provided
+    total_fetched_trading_days = 0
+    if fetch_start_date is not None:
+        total_fetched_df = get_daily_prices(db_path, ticker, fetch_start_date, check_date)
+        total_fetched_trading_days = len(total_fetched_df) if not total_fetched_df.empty else 0
+    
+    # If we have 51+ trading days in total fetched data, we should be able to calculate EMA
+    trading_days_to_check = total_fetched_trading_days if fetch_start_date is not None else actual_trading_days
+    if trading_days_to_check >= 51:
+        if prices_df.empty:
+            raise ValueError(
+                f"EMA calculation failed for {ticker} on {check_date}: "
+                f"Have {total_fetched_trading_days} total trading days of fetched data, but prices_df is empty. "
+                f"This may indicate a data quality issue."
+            )
+        if actual_trading_days < ema_period:
+            raise ValueError(
+                f"EMA calculation failed for {ticker} on {check_date}: "
+                f"Have {total_fetched_trading_days} total trading days of fetched data (more than 50), "
+                f"but only {actual_trading_days} trading days in lookback period (need {ema_period}). "
+                f"This may indicate insufficient lookback period."
+            )
+    
+    if prices_df.empty or actual_trading_days < ema_period:
+        # Not enough data - return None (this is expected for early dates with < 50 trading days)
+        return False, None
+    
+    # Calculate EMA
+    ema = prices_df['close'].ewm(span=ema_period, adjust=False).mean()
+    
+    # Filter to dates up to check_date
+    prices_filtered = prices_df[prices_df.index.date <= check_date]
+    ema_filtered = ema[ema.index.date <= check_date]
+    
+    if ema_filtered.empty or prices_filtered.empty:
+        # If we have 51+ trading days in total fetched data but EMA calculation returned empty, that's an error
+        if trading_days_to_check >= 51:
+            raise ValueError(
+                f"EMA calculation failed for {ticker} on {check_date}: "
+                f"Have {total_fetched_trading_days} total trading days of fetched data, but EMA calculation returned empty. "
+                f"This may indicate a data quality issue."
+            )
+        # Otherwise, not enough data - return None
+        return False, None
+    
+    # Get the most recent EMA value and current price
+    latest_ema = ema_filtered.iloc[-1]
+    current_price = prices_filtered['close'].iloc[-1]
+    
+    # Check if price is above EMA
+    if pd.notna(latest_ema) and pd.notna(current_price):
+        ema_value = float(latest_ema) if pd.notna(latest_ema) else None
+        return current_price > latest_ema, ema_value
+    
+    # Final validation: if we got here but EMA is None and we have 51+ trading days, that's an error
+    if trading_days_to_check >= 51:
+        raise ValueError(
+            f"EMA calculation failed for {ticker} on {check_date}: "
+            f"Have {total_fetched_trading_days} total trading days of fetched data, but EMA value is None. "
+            f"This may indicate missing or invalid price data."
+        )
+    
+    return False, None
+
+
 def check_macd_crossover(db_path: str, ticker: str, check_date: date, 
                         fast_period: int = 12, slow_period: int = 26, signal_period: int = 9) -> bool:
     """

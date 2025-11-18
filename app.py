@@ -588,7 +588,7 @@ else:
     for sid in STRATEGIES.keys():
         s = get_strategy(sid)
         with st.expander(s.name, expanded=False):
-            readme_path = f"strategies/{sid}.md"
+            readme_path = f"strategies/{sid}/{sid}.md"
             try:
                 with open(readme_path, "r", encoding="utf-8") as f:
                     st.markdown(f.read())

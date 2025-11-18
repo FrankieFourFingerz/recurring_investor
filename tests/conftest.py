@@ -113,7 +113,8 @@ def mock_fetch_and_update(monkeypatch):
     
     # Patch in both investment_lib and strategies modules
     monkeypatch.setattr('investment_lib.fetch_and_update_prices', mock_fetch)
-    monkeypatch.setattr('strategies.simple_recurring.fetch_and_update_prices', mock_fetch)
-    monkeypatch.setattr('strategies.rsi_swing.fetch_and_update_prices', mock_fetch)
+    monkeypatch.setattr('strategies.simple_recurring.simple_recurring.fetch_and_update_prices', mock_fetch)
+    monkeypatch.setattr('strategies.rsi_swing.rsi_swing.fetch_and_update_prices', mock_fetch)
+    monkeypatch.setattr('strategies.macd_swing.macd_swing.fetch_and_update_prices', mock_fetch)
     return mock_fetch
 
