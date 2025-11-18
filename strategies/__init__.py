@@ -9,12 +9,14 @@ from strategies.base import Strategy
 from strategies.simple_recurring import SimpleRecurringStrategy
 from strategies.rsi_swing import RSISwingStrategy
 from strategies.macd_swing import MACDSwingStrategy
+from strategies.macd_ema_trailing_stop import MACDEMATrailingStopStrategy
 
 # Registry of available strategies
 STRATEGIES = {
     'simple_recurring': SimpleRecurringStrategy,
     'rsi_swing': RSISwingStrategy,
-    'macd_swing': MACDSwingStrategy
+    'macd_swing': MACDSwingStrategy,
+    'macd_ema_trailing_stop': MACDEMATrailingStopStrategy
 }
 
 
